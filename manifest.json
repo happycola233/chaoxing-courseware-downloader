@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "课件收纳 · 超星课件下载助手",
+  "version": "1.0.0",
+  "description": "从已登录的超星课程页识别课件，选择、批量下载并按课程章节归档。无账号收集，无远程服务。",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting", "storage", "downloads", "alarms", "clipboardWrite", "declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["*://*.chaoxing.com/*", "*://*.chaoxing.com.cn/*", "*://*.cldisk.com/*"],
+  "background": {"service_worker": "src/background.js", "type": "module"},
+  "action": {"default_title": "打开课件收纳", "default_icon": {"16": "assets/icon16.png", "32": "assets/icon32.png"}},
+  "icons": {"16": "assets/icon16.png", "48": "assets/icon48.png", "128": "assets/icon128.png"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'"}
+}

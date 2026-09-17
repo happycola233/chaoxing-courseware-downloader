@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>课件收纳 · 超星课件下载助手</title>
+  <link rel="icon" href="assets/icon32.png">
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="manager.html"><img src="assets/icon48.png" alt=""><span>课件收纳<small>COURSEWARE / LOCAL</small></span></a>
+    <div class="nav-label">工作空间</div>
+    <nav aria-label="主导航">
+      <button class="nav-item active" data-view="library"><span>▤</span>课件库 <b id="navCount">0</b></button>
+      <button class="nav-item" data-view="queue"><span>↓</span>下载队列 <b id="queueCount">0</b></button>
+      <button class="nav-item" data-view="help"><span>ⓘ</span>使用与隐私</button>
+    </nav>
+    <div class="sidebar-note"><span class="status-dot"></span>只在你的浏览器中工作<p>登录状态由浏览器管理。<br>课件与账号信息不上传。</p></div>
+    <div class="version">超星课件下载助手 <span>v1.0</span></div>
+  </aside>
+
+  <main>
+    <div id="demoBanner" class="demo-banner" hidden>界面示例 · 下方均为虚构数据，真实扫描与下载请在 Chrome 扩展中使用。</div>
+    <header class="page-header"><div><div class="eyebrow">让学习资料，井井有条</div><h1 id="viewTitle">你的课件，收纳在一起。</h1><p id="viewDescription">从课程页面发现原始文件，按需要选择，一次下载。</p></div><div class="local-badge"><span class="status-dot"></span>本地运行</div></header>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <section id="libraryView">
+      <section class="source-card" aria-label="课件来源">
+        <div class="section-kicker">01 / 选择来源</div>
+        <div class="source-row"><div class="source-select"><label for="sourceTab">已登录的课程页面</label><select id="sourceTab"><option value="">正在查找课程标签页…</option></select></div><button id="refreshTabs" class="icon-button" title="刷新页面列表" aria-label="刷新页面列表">↻</button><button id="scanCurrent" class="primary">扫描当前页 <span>↗</span></button><button id="scanCatalog">按目录扫描</button><button id="scanTabs" class="quiet">扫描全部已开页面</button></div>
+        <p class="hint" id="sourceHint">先在 Chrome 打开并登录课程，等课件显示后再扫描。多次扫描会自动合并相同资源。</p>
+        <div id="scanProgress" class="scan-progress" hidden><span class="status-dot"></span><span id="scanStatus"></span><button id="stopScan" class="text-button">停止扫描</button></div>
+      </section>
+
+      <div class="stat-grid"><div><span class="stat-label">已发现课件</span><strong id="totalCount">0</strong><small>去重后的原始文件</small></div><div><span class="stat-label">已选择</span><strong id="selectedCount">0</strong><small id="selectedSize">等待选择文件</small></div><div><span class="stat-label">下载完成</span><strong id="doneCount">0</strong><small>由 Chrome 保存到本地</small></div></div>
+
+      <section class="library-card">
+        <div class="section-head"><div><div class="section-kicker">02 / 整理与下载</div><h2>课件库 <span id="visibleCount"></span></h2></div><button id="downloadSelected" class="primary" disabled>↓ 下载所选 <span id="downloadCount">0</span></button></div>
+        <div class="filters"><label class="search-field"><span>⌕</span><input type="search" id="search" placeholder="搜索文件、课程或章节" aria-label="搜索课件"></label><select id="typeFilter" aria-label="筛选文件类型"><option value="">全部类型</option><option value="document">PDF / 文档</option><option value="slides">演示文稿</option><option value="sheet">表格</option><option value="archive">压缩包</option><option value="text">文本 / 电子书</option><option value="image">图片</option><option value="media">音视频</option><option value="other">其他</option></select><select id="courseFilter" aria-label="筛选课程"><option value="">全部课程</option></select></div>
+        <div class="selection-toolbar"><label><input type="checkbox" id="selectAll"> 选择当前筛选结果</label><div><button id="copySelected" class="text-button">复制所选链接</button><button id="exportManifest" class="text-button">导出文件清单</button><button id="clearLibrary" class="text-button muted">清空列表</button></div></div>
+        <div class="table-wrap"><table><thead><tr><th class="check-col"><span class="sr-only">选择</span></th><th>文件名称</th><th>课程 / 章节</th><th>大小</th><th>状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="resourceRows"></tbody></table></div>
+        <div id="emptyLibrary" class="empty"><div class="empty-icon">▤</div><h3>从第一份课件开始</h3><p>扫描课程页面后，PDF、PPT、文档等文件会出现在这里。<br>再选择需要的文件，交给下载队列。</p></div>
+        <div class="card-foot"><span>签名链接仅在本次浏览器会话中使用</span><span>最多保留 2,000 个资源</span></div>
+      </section>
+
+      <details class="settings"><summary>下载偏好 <span id="settingsSummary">按课程与章节归档 · 2 个并行任务</span></summary><div class="settings-grid"><label>下载目录中的文件夹<input id="folder" maxlength="40" value="超星课件"></label><label>并行任务<select id="concurrency"><option value="1">1 个</option><option value="2" selected>2 个（推荐）</option><option value="3">3 个</option><option value="4">4 个</option></select></label><label>自动重试<select id="retries"><option value="0">不自动重试</option><option value="1" selected>1 次</option><option value="2">2 次</option></select></label><label>下载与复制的文件版本<select id="format"><option value="original">保留原格式（推荐）</option><option value="pdf">文档使用 PDF 版</option></select></label><label class="checkbox-setting"><input type="checkbox" id="organize" checked>按课程 / 章节创建文件夹</label><label class="checkbox-setting"><input type="checkbox" id="saveAs">每个文件询问保存位置</label><button id="saveSettings">保存偏好</button></div><p class="hint">PDF 课件优先使用平台的 PDF 地址；PPT、Word 等默认保留原格式。PDF 版使用平台已提供的转换结果。文件保存在 Chrome 默认下载位置，同名自动编号。</p></details>
+    </section>
+
+    <section id="queueView" hidden>
+      <div class="queue-toolbar"><span id="queueSummary">暂无下载任务</span><div><button id="pauseQueue">暂停队列</button><button id="retryQueue">重试失败项</button><button id="cancelQueue" class="quiet">取消未完成</button><button id="clearFinished" class="text-button">清理已结束记录</button></div></div>
+      <div id="queueRows" class="queue-list"></div><div id="emptyQueue" class="empty"><div class="empty-icon">↓</div><h3>下载队列还是空的</h3><p>在课件库勾选文件，点击“下载所选”。</p></div>
+      <p class="hint">关闭本管理页面不会停止已提交的下载。重启浏览器后，扩展中的临时列表会清空；Chrome 下载记录仍可查看。</p>
+    </section>
+
+    <section id="helpView" class="help-grid" hidden>
+      <article><div class="section-kicker">开始使用</div><h2>三个步骤，收好课件。</h2><ol><li>在 Chrome 登录超星，进入课程的学生学习页面。</li><li>点击扩展图标，在这里扫描当前页面，或选择目录中的章节。</li><li>筛选、勾选文件并下载。到下载队列查看进度或打开所在文件夹。</li></ol></article>
+      <article><div class="section-kicker">不同的扫描方式</div><h2>适合你的收集节奏。</h2><p><b>当前页：</b>识别已加载的嵌套课件预览和附件。</p><p><b>目录扫描：</b>读取目录中可访问章节的课件卡片。空章节、锁定章节和身份验证页面会报告为跳过或失败。</p><p><b>已开页面：</b>依次扫描已打开的超星标签页，累积到同一个课件库。</p><p><b>复制链接：</b>每行可复制单个文件地址，也可勾选多个后批量复制。复制前自动尝试刷新地址；可能包含临时签名，请勿公开分享。</p><p>目录扫描期间请保持管理页与来源课程页开启，避免切换来源页的课程。可随时停止，当前章节的读取完成后生效。</p></article>
+      <article><div class="section-kicker">数据与隐私</div><h2>浏览器内处理。</h2><p>不读取或导出 Cookie，不上传课件，不接入统计服务。偏好设置保存在本机；资源地址和下载队列仅保留到本次浏览器会话结束。</p><p>导出清单仅包含文件名、课程名、章节名、类型和大小，不含下载链接或账号标识。公开分享前请检查名称中是否有个人信息。</p><p>下载来源规则只在下载任务期间生效，使用来源站点的域名，不传递课程链接里的签名参数。</p></article>
+      <article><div class="section-kicker">遇到问题</div><h2>保留明确的下一步。</h2><p><b>没有识别到文件：</b>等待课件加载后重扫，或切换到具体章节。仅有分页图片的预览不等于原文件可下载。</p><p><b>403 / 链接过期：</b>刷新对应课件并重新扫描，再重试失败项；账号无权限时无法下载。</p><p><b>只有元数据：</b>下载时会尝试读取平台资源接口。请保持来源课程页开启。</p><p>支持平台直接提供的原文件与直链媒体。暂不合并图片、转换 Office 文档、下载加密流媒体或处理验证码。</p></article>
+    </section>
+    <footer>课件收纳 <span>让资料回到你的学习节奏里。</span><span>仅下载你有权访问和保存的资料</span></footer>
+  </main>
+
+  <dialog id="chapterDialog"><form method="dialog"><div class="section-kicker">目录扫描</div><h2>选择要收集的章节</h2><p class="hint">只列出当前目录已提供的可访问章节。扫描不会播放视频或提交学习完成请求。</p><label class="chapter-all"><input type="checkbox" id="selectAllChapters" checked>全选可访问章节</label><div id="chapterList" class="chapter-list"></div><div class="dialog-actions"><button value="cancel">返回</button><button id="startChapterScan" type="button" class="primary">开始扫描</button></div></form></dialog>
+  <dialog id="copyDialog"><form method="dialog"><h2>文件链接已准备好</h2><p class="hint">浏览器未允许自动复制，请在下方选中并按 Ctrl+C。链接可能带临时签名，请勿公开。</p><textarea id="copyFallback" readonly rows="8" aria-label="待复制的文件链接"></textarea><div class="dialog-actions"><button>完成</button></div></form></dialog>
+  <script type="module" src="src/manager.js"></script>
+</body>
+</html>
