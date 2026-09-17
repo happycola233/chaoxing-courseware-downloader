@@ -4,7 +4,6 @@
   if (window.top !== window || !globalThis.CoursewareCore.coursePage(location.href) || globalThis.CoursewareInline) return;
   globalThis.CoursewareInline = true;
   let host, panel, button, open = false, tabId;
-  const watched = new WeakSet();
   const extensionOrigin = chrome.runtime.getURL('/').replace(/\/$/, '');
   function toggle(value) {
     open = value;
@@ -25,6 +24,7 @@
     host.id = 'courseware-download-entry';
     host.style.cssText = anchor ? 'display:inline-block;margin-left:20px;vertical-align:middle;position:relative;z-index:100;' : 'position:fixed;right:24px;bottom:28px;z-index:2147483600;';
     const shadow = host.attachShadow({ mode: 'closed' });
+    const installedHost = host;
     const style = doc.createElement('style');
     style.textContent = ':host{all:initial}button{display:inline-flex;align-items:center;gap:7px;border:1px solid #dce2e7;background:#fff;color:#334155;border-radius:8px;padding:8px 12px;font:500 13px/18px system-ui,"Microsoft YaHei",sans-serif;cursor:pointer;box-shadow:0 1px 2px #0f172a08}button:hover{border-color:#94a3b8;background:#f8fafc}button:focus-visible{outline:2px solid #2563eb;outline-offset:3px}svg{width:16px;height:16px}iframe{position:fixed;z-index:2147483647;width:min(470px,calc(100vw - 24px));border:1px solid #e2e8f0;border-radius:12px;background:white;box-shadow:0 12px 40px #0f172a26;color-scheme:light}iframe[hidden]{display:none}';
     button = doc.createElement('button');
@@ -39,6 +39,7 @@
       try {
         if (!panel) {
           const reply = await chrome.runtime.sendMessage({ type: 'INLINE_TAB' });
+          if (host !== installedHost || !installedHost.isConnected) return;
           if (!reply?.ok) throw new Error();
           tabId = reply.data;
           panel = doc.createElement('iframe');
@@ -52,30 +53,24 @@
     shadow.append(style, button);
     if (anchor) anchor.insertAdjacentElement('afterend', host);
     else doc.body.append(host);
-    doc.addEventListener('keydown', event => { if (event.key === 'Escape' && open) toggle(false); });
-    doc.addEventListener('pointerdown', event => { if (open && !event.composedPath().includes(host)) toggle(false); }, true);
-    doc.defaultView.addEventListener('message', event => {
-      if (panel && event.source === panel.contentWindow && event.origin === extensionOrigin && event.data === 'courseware-close') toggle(false);
-    });
-    doc.defaultView.addEventListener('resize', () => { if (open) toggle(true); });
   }
+  // Keep the entry in the outer document. A catalog iframe can be inaccessible,
+  // still loading, or replaced; none of these should hide the download entry.
   function mount() {
     if (host?.isConnected) return;
-    const frame = document.querySelector('iframe[src*="/mycourse/studentcourse"]');
-    if (frame) {
-      if (!watched.has(frame)) { watched.add(frame); frame.addEventListener('load', mount); }
-      try {
-        const doc = frame.contentDocument;
-        const anchor = doc?.querySelector('.chapter_head .xs_head_name');
-        if (anchor) { install(doc, anchor); return; }
-        if (!doc?.body || doc.URL === 'about:blank') return;
-      } catch { /* Unusual cross-origin wrapper: use a small floating entry. */ }
-    }
+    panel = null; open = false;
     install(document, document.querySelector('.headRight .backOld'));
   }
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && open) toggle(false); });
+  document.addEventListener('pointerdown', event => { if (open && !event.composedPath().includes(host)) toggle(false); }, true);
+  window.addEventListener('message', event => {
+    if (panel && event.source === panel.contentWindow && event.origin === extensionOrigin && event.data === 'courseware-close') toggle(false);
+  });
+  window.addEventListener('resize', () => { if (open) toggle(true); });
   let scheduled;
   new MutationObserver(() => {
-    clearTimeout(scheduled); scheduled = setTimeout(mount, 150);
+    // Throttle, rather than debounce: a busy page must not postpone remounting forever.
+    if (!scheduled) scheduled = setTimeout(() => { scheduled = null; mount(); }, 150);
   }).observe(document.body, { childList: true, subtree: true });
   mount();
 })();

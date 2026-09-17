@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "课件收纳 · 超星课件下载助手",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "从已登录的超星课程页识别课件，选择、批量下载并按课程章节归档。无账号收集，无远程服务。",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "storage", "downloads", "alarms", "clipboardWrite", "declarativeNetRequestWithHostAccess"],
