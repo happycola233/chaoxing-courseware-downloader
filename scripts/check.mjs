@@ -11,7 +11,7 @@ for (const path of files.filter(p => /\.(?:js|mjs)$/.test(p))) {
   if (result.status !== 0) { console.error(relative(root, path), result.stderr); failures++; }
 }
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
-for (const path of [manifest.background.service_worker, ...Object.values(manifest.icons), 'manager.html']) {
+for (const path of [manifest.background.service_worker, ...Object.values(manifest.icons), manifest.action.default_popup, ...(manifest.content_scripts || []).flatMap(entry => entry.js || []), ...(manifest.web_accessible_resources || []).flatMap(entry => entry.resources)]) {
   try { await access(join(root, path)); } catch { console.error('Missing packaged file:', path); failures++; }
 }
 if (manifest.manifest_version !== 3 || manifest.permissions.includes('cookies') || manifest.host_permissions.includes('<all_urls>')) { console.error('Manifest permission check failed.'); failures++; }

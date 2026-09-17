@@ -8,16 +8,22 @@ function chunk(type, data) { const text = Buffer.from(type); const length = Buff
 await mkdir(join(root, 'assets'), { recursive: true });
 for (const size of [16, 32, 48, 128]) {
   const raw = Buffer.alloc(size * (1 + size * 4));
+  const lines = [[.5,.24,.5,.59],[.36,.46,.5,.60],[.5,.60,.64,.46],[.26,.64,.26,.76],[.26,.76,.74,.76],[.74,.76,.74,.64]];
+  function distance(x,y,x1,y1,x2,y2) {
+    const t = Math.max(0, Math.min(1, ((x-x1)*(x2-x1)+(y-y1)*(y2-y1))/((x2-x1)**2+(y2-y1)**2)));
+    return Math.hypot(x-x1-t*(x2-x1),y-y1-t*(y2-y1));
+  }
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const a = x / size, b = y / size;
-    let color = [23, 118, 105, 255];
-    const radius = .18;
-    const cx = Math.max(radius, Math.min(1 - radius, a)), cy = Math.max(radius, Math.min(1 - radius, b));
-    if (Math.hypot(a - cx, b - cy) > radius) color = [0, 0, 0, 0];
-    if (a > .24 && a < .65 && b > .18 && b < .73) color = [227, 238, 220, 255];
-    if (a > .30 && a < .65 && b > .25 && b < .81) color = [255, 255, 250, 255];
-    if (a > .38 && a < .58 && ((b > .36 && b < .39) || (b > .45 && b < .48))) color = [118, 165, 143, 255];
-    if ((a > .69 && a < .77 && b > .47 && b < .72) || (b > .65 && b < .80 && Math.abs(a - .73) < (.80 - b))) color = [239, 195, 141, 255];
+    const sum = [0,0,0,0];
+    for (let sy=0;sy<4;sy++) for (let sx=0;sx<4;sx++) {
+      const a = (x+(sx+.5)/4)/size, b = (y+(sy+.5)/4)/size;
+      const cx = Math.max(.24, Math.min(.76,a)), cy = Math.max(.24, Math.min(.76,b));
+      const inside = Math.hypot(a-cx,b-cy) <= .2;
+      const ink = lines.some(line => distance(a,b,...line) <= .031);
+      const color = inside ? (ink ? [255,255,255,255] : [37,99,235,255]) : [0,0,0,0];
+      for (let i=0;i<4;i++) sum[i] += color[i];
+    }
+    const color = sum.map(c => Math.round(c/16));
     const offset = y * (1 + size * 4) + 1 + x * 4;
     raw.set(color, offset);
   }

@@ -77,3 +77,48 @@ test('website and content-script messages cannot invoke privileged operations', 
   const result = events.message[0]({ type: 'DOWNLOAD', keys: ['object:example-file-001'] }, { id: extensionId, url: sourceUrl }, () => { replied = true; });
   assert.equal(result, false); assert.equal(replied, false);
 });
+
+test('in-page bootstrap is tied to the real sender tab; content cannot download', async () => {
+  const sender = { id: extensionId, url: sourceUrl, frameId: 0, tab: { id: 7, url: sourceUrl } };
+  const response = await new Promise(resolve => events.message[0]({ type: 'INLINE_TAB', tabId: 999 }, sender, resolve));
+  assert.equal(response.data, 7);
+  assert.equal(events.message[0]({ type: 'DOWNLOAD', keys: [] }, sender, () => {}), false);
+  assert.equal(events.message[0]({ type: 'INLINE_TAB' }, { ...sender, frameId: 3 }, () => {}), false);
+});
+
+test('cross-origin read relay only accepts course endpoints on source host or learning host', async () => {
+  const home = 'https://mooc2-ans.chaoxing.com/mooc2-ans/mycourse/stu?courseid=101';
+  const sender = { id: extensionId, url: home, frameId: 0, tab: { id: 7, url: home } };
+  const read = url => new Promise(resolve => events.message[0]({ type: 'READ_PAGE', url }, sender, resolve));
+  const originalFetch = globalThis.fetch, calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options }); return { ok: true, url, headers: new Headers(), text: async () => '<html>synthetic course</html>' };
+  };
+  try {
+    const response = await read('https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=101');
+    assert.equal(response.ok, true); assert.equal(calls[0].options.credentials, 'include');
+    for (const url of [
+      'https://outside.invalid/mycourse/studentstudy',
+      'https://mooc1.chaoxing.com/mycourse/delete',
+      'https://mooc1.chaoxing.com/ananas/status/example/../../delete',
+      'https://other.chaoxing.com/mycourse/studentstudy',
+      'https://mooc1.chaoxing.com/mycourse/transfer?moocId=101&clazzid=202&refer=https%3A%2F%2Foutside.invalid%2Fmycourse%2Fstudentstudy',
+      'https://d0.cldisk.com/mycourse/studentstudy'
+    ]) assert.equal((await read(url)).ok, false);
+    assert.equal(calls.length, 1);
+    const transfer = new URL('https://mooc1.chaoxing.com/mycourse/transfer');
+    transfer.search = new URLSearchParams({ moocId: '101', clazzid: '202', refer: 'https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=101&clazzid=202' });
+    assert.equal((await read(transfer.href)).ok, true);
+    assert.equal(rules.size, 0);
+    globalThis.fetch = async () => ({ ok: true, url: 'https://passport2.chaoxing.com/login', headers: new Headers(), text: async () => 'login' });
+    assert.equal((await read('https://mooc1.chaoxing.com/mycourse/studentstudy?courseId=101')).ok, false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('embedded manager scans its actual containing tab rather than a requested unrelated tab', async () => {
+  const sender = { id: extensionId, url: chrome.runtime.getURL('manager.html') + '?embedded=1&tab=999', tab: { id: 7, url: sourceUrl } };
+  const reply = await new Promise(resolve => events.message[0]({ type: 'SCAN_TAB', tabId: 999 }, sender, resolve));
+  assert.equal(reply.ok, true);
+  assert.equal((await message('STATE')).resources[0].sourceTabId, 7);
+  assert.equal(events.message[0]({ type: 'SCAN_TAB', tabId: 7 }, { ...sender, tab: { id: 7, url: 'https://outside.invalid/' } }, () => {}), false);
+});

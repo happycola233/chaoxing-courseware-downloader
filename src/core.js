@@ -215,19 +215,44 @@
 
   function catalog(doc, base) {
     const chapters = new Map();
-    for (const el of doc.querySelectorAll('.posCatalog_name[onclick], [onclick*="getTeacherAjax"], a[href*="studentstudy?"]')) {
+    for (const el of doc.querySelectorAll('.posCatalog_name[onclick], [onclick*="getTeacherAjax"], .chapter_item[onclick*="toOld"], a[href*="studentstudy?"]')) {
       const onclick = el.getAttribute('onclick') || '';
       const args = onclick.match(/getTeacherAjax\(\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)/);
-      let id = args?.[3];
+      const homeArgs = onclick.match(/toOld\(\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)['"]?\s*,\s*['"]?(\d+)/);
+      let id = args?.[3] || homeArgs?.[2];
       const href = allowedUrl(el.getAttribute('href'), base);
       if (!id && href) id = new URL(href).searchParams.get('chapterId');
       if (!id || !/^\d+$/.test(id)) continue;
-      const label = (el.getAttribute('title') || el.textContent || '章节').trim().replace(/\s+/g, ' ');
-      const number = el.querySelector('.posCatalog_sbar')?.textContent?.trim() || '';
-      const locked = /(?:^|\s)(?:locked|disabled)(?:\s|$)/.test(el.className || '') || el.getAttribute('aria-disabled') === 'true';
-      if (!chapters.has(id)) chapters.set(id, { id, name: (number ? number + ' ' : '') + label, locked });
+      const label = (el.getAttribute('title') || el.querySelector('.clicktitle')?.textContent || el.textContent || '章节').trim().replace(/\s+/g, ' ');
+      const number = el.querySelector('.posCatalog_sbar, .catalog_sbar')?.textContent?.trim() || '';
+      const locked = /(?:^|\s)(?:locked|disabled)(?:\s|$)/.test(el.className || '') || el.getAttribute('aria-disabled') === 'true' || Boolean(el.querySelector('.icon_suo, .catalog_lock'));
+      if (!chapters.has(id)) chapters.set(id, { id, name: (number && !label.startsWith(number) ? number + ' ' : '') + label, locked,
+        ...(homeArgs ? { courseId: homeArgs[1], clazzId: homeArgs[3] } : {}) });
     }
     return [...chapters.values()];
+  }
+
+  function coursePage(value) {
+    const valid = allowedUrl(value);
+    if (!valid) return false;
+    const url = new URL(valid);
+    return !url.hostname.endsWith('cldisk.com') && /^\/(?:mooc(?:2)?-ans\/)?mycourse\/(?:stu|studentcourse|studentstudy)\/?$/.test(url.pathname);
+  }
+
+  function readablePage(value) {
+    const valid = allowedUrl(value);
+    if (!valid) return false;
+    const url = new URL(valid);
+    if (url.pathname === '/mycourse/transfer') {
+      const refer = allowedUrl(url.searchParams.get('refer'));
+      if (!refer || url.hostname.endsWith('cldisk.com')) return false;
+      const destination = new URL(refer);
+      return destination.origin === url.origin && destination.pathname === '/mycourse/studentstudy' &&
+        /^\d+$/.test(url.searchParams.get('moocId') || '') &&
+        destination.searchParams.get('courseId') === url.searchParams.get('moocId') &&
+        destination.searchParams.get('clazzid') === url.searchParams.get('clazzid');
+    }
+    return !url.hostname.endsWith('cldisk.com') && /^\/(?:ananas\/status\/[a-zA-Z0-9_-]{8,128}|(?:mooc(?:2)?-ans\/)?(?:knowledge\/cards|mycourse\/studentstudy(?:Ajax)?))\/?$/.test(url.pathname);
   }
 
   function safeError(error) {
@@ -267,6 +292,6 @@
   globalThis.CoursewareCore = Object.freeze({
     GROUPS, allowedUrl, extension, category, filenameFromUrl, safeName, downloadPath,
     stringLiteral, literalField, assignedObject, normalizeResource, canonicalUrl,
-    mergeResources, inspect, catalog, safeError, publicManifest, transferResource
+    mergeResources, inspect, catalog, coursePage, readablePage, safeError, publicManifest, transferResource
   });
 })();

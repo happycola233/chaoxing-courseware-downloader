@@ -10,12 +10,12 @@ function ruleId(id) {
   return 1000 + hash % 1_000_000_000;
 }
 
-async function prepare(job) {
+async function prepare(job, referrerPath = '/') {
   const url = C.allowedUrl(job.resource.url);
   const source = C.allowedUrl(job.resource.sourceUrl);
   if (!url || !source) return;
   // Use only the origin, so signed preview/account parameters never go to the CDN.
-  const referer = new URL(source).origin + '/';
+  const referer = new URL(source).origin + referrerPath;
   const id = ruleId(job.id);
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: [id],
@@ -48,10 +48,10 @@ async function inject(tabId, allFrames = false) {
   return chrome.scripting.executeScript({ target: { tabId, allFrames }, files: ['src/core.js', 'src/page.js'] });
 }
 
-async function pageCall(tabId, operation, argument) {
-  await inject(tabId);
+async function pageCall(tabId, operation, argument, frameId = 0) {
+  await inject(tabId, frameId !== 0);
   const results = await chrome.scripting.executeScript({
-    target: { tabId },
+    target: { tabId, frameIds: [frameId] },
     func: async (op, arg) => {
       try { return { ok: true, data: await globalThis.CoursewarePage[op](arg) }; }
       catch (error) { return { ok: false, error: globalThis.CoursewareCore.safeError(error) }; }
@@ -104,12 +104,6 @@ async function ensureAlarm() {
   if (!await chrome.alarms.get(ALARM)) await chrome.alarms.create(ALARM, { periodInMinutes: 0.5 });
 }
 
-chrome.action.onClicked.addListener(async tab => {
-  const url = chrome.runtime.getURL('manager.html') + (Number.isInteger(tab.id) ? '?tab=' + tab.id : '');
-  const existing = (await chrome.tabs.query({})).find(t => t.url?.startsWith(chrome.runtime.getURL('manager.html')));
-  if (existing) await chrome.tabs.update(existing.id, { active: true, url });
-  else await chrome.tabs.create({ url });
-});
 chrome.runtime.onInstalled.addListener(() => { void ensureAlarm(); });
 chrome.runtime.onStartup.addListener(() => { void ensureAlarm(); void pump(); });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) void pump(); });
@@ -133,13 +127,22 @@ async function handle(message) {
   switch (message.type) {
     case 'TABS': {
       const tabs = await chrome.tabs.query({ url: SITE_PATTERNS });
-      return tabs.map(t => ({ id: t.id, title: t.title || '超星页面', host: new URL(t.url).hostname }));
+      return tabs.map(t => ({ id: t.id, title: t.title || '超星页面', host: new URL(t.url).hostname, active: t.active === true }));
     }
     case 'STATE': return queue.snapshot();
     case 'SCAN_TAB': return scanTab(message.tabId);
-    case 'CATALOG': return pageCall(message.tabId, 'context');
+    case 'CATALOG': {
+      const frames = await inject(message.tabId, true);
+      for (const frame of frames) {
+        try {
+          const ctx = await pageCall(message.tabId, 'context', null, frame.frameId);
+          if (ctx.chapters.length) return { chapters: ctx.chapters.map(c => ({ ...c, frameId: frame.frameId })), homepage: !ctx.cardsUrl };
+        } catch { /* Continue through accessible frames. */ }
+      }
+      return { chapters: [] };
+    }
     case 'SCAN_CHAPTER': {
-      const data = await pageCall(message.tabId, 'scanChapter', message.chapter);
+      const data = await pageCall(message.tabId, 'scanChapter', message.chapter, message.chapter?.frameId || 0);
       await queue.addResources(data.resources.map(r => ({ ...r, sourceTabId: message.tabId })));
       return { count: data.resources.length, cards: data.cardCount };
     }
@@ -192,10 +195,45 @@ async function handle(message) {
   }
 }
 
+async function readCoursePage(message, sender) {
+  await requireTab(sender.tab.id);
+  if (!C.readablePage(message.url)) throw new Error('不支持的资源接口。');
+  const source = new URL(sender.url), target = new URL(message.url);
+  const suffix = source.hostname.endsWith('.chaoxing.com.cn') ? 'chaoxing.com.cn' : 'chaoxing.com';
+  const permitted = new Set([source.origin, 'https://mooc1.' + suffix]);
+  if (!permitted.has(target.origin)) throw new Error('资源接口来源不匹配。');
+  // Fetch cannot freely set a cross-origin Referer from the extension origin.
+  // Apply the same narrow session rule used for downloads, and always remove it.
+  const id = 'read-' + crypto.randomUUID();
+  try {
+    await prepare({ id, resource: { url: target.href, sourceUrl: target.origin } }, target.pathname.startsWith('/ananas/status/') ? '/ananas/modules/pdf/index.html' : '/');
+    const response = await fetch(target.href, { credentials: 'include', cache: 'no-store',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: AbortSignal.timeout(18000) });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    if (!C.readablePage(response.url) || !permitted.has(new URL(response.url).origin)) throw new Error('章节需要登录或身份验证，请先在课程页处理。');
+    if (Number(response.headers.get('content-length')) > 4_000_000) throw new Error('页面数据过大。');
+    const content = await response.text();
+    if (content.length > 4_000_000) throw new Error('页面数据过大。');
+    return content;
+  } finally { await cleanup(id); }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Only the packaged manager may issue commands. Content scripts and pages cannot trigger downloads.
-  if (sender.id !== chrome.runtime.id || sender.url?.split('?')[0] !== chrome.runtime.getURL('manager.html')) return false;
-  handle(message).then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: C.safeError(error) }));
+  if (sender.id !== chrome.runtime.id || !message || typeof message !== 'object') return false;
+  const manager = sender.url?.split('?')[0] === chrome.runtime.getURL('manager.html');
+  const content = Number.isInteger(sender.tab?.id) && C.allowedUrl(sender.url) && !new URL(sender.url).hostname.endsWith('cldisk.com');
+  let task;
+  // Isolated content scripts only obtain their own tab ID or request narrowly scoped read-only pages.
+  // There is no window.postMessage bridge from website scripts.
+  if (content && message.type === 'READ_PAGE') task = readCoursePage(message, sender);
+  else if (content && sender.frameId === 0 && C.coursePage(sender.url) && message.type === 'INLINE_TAB') task = requireTab(sender.tab.id).then(() => sender.tab.id);
+  else if (manager) {
+    const embedded = new URL(sender.url).searchParams.get('embedded') === '1';
+    if (embedded && (!Number.isInteger(sender.tab?.id) || !C.coursePage(sender.tab.url))) return false;
+    if (embedded && ['SCAN_TAB', 'CATALOG', 'SCAN_CHAPTER'].includes(message.type)) message = { ...message, tabId: sender.tab.id };
+    task = handle(message);
+  } else return false;
+  task.then(data => sendResponse({ ok: true, data }), error => sendResponse({ ok: false, error: C.safeError(error) }));
   return true;
 });
 void ensureAlarm();
